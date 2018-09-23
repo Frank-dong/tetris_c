@@ -11,11 +11,12 @@
 #define false -1
 #define DIMENSION	4
 
-#define set_pos(x, y)	printf("\033[%d;%dH", y, x)
+#define set_pos(x, y)	printf("\033[%d;%dH", x + 1, 2*y+1)
 #define clear_screen() 	printf("\033[2J")
 #define hide_cursor()	printf("\033[?25l")
 #define show_cursor()	printf("\033[?25h")
-#define paint_elem(color)	printf("\033[%dm  ", 40 + color)
+#define paint_elem(c)	printf("\033[%dm  ", 40 + c)
+#define close_all()		printf("\033[0m");
 
 typedef enum {
 	DRAW,
@@ -28,16 +29,6 @@ typedef struct{
 } block_t;
 
 /*-------------------------------*/
-char* color_array[8] = {
-	"\033[40m  ",
-	"\033[41m  ",
-	"\033[42m  ",
-	"\033[43m  ",
-	"\033[44m  ",
-	"\033[45m  ",
-	"\033[46m  ",
-	"\033[47m  ",
-};
 
 void random_color(block_t* b)
 {
@@ -101,17 +92,36 @@ int revolve(block_t* b)
 	return true;
 }
 
-void init(int length, int high, unsigned char** p)
+void init(int length, int high, unsigned char*** pcanvas)
 {
 	int i = 0, j = 0;
 
 	clear_screen();
+
+	*pcanvas = (unsigned char**)malloc((sizeof(unsigned char*))*high);
+	for (i = 0; i < high; ++i)
+		(*pcanvas)[i] = (unsigned char*)malloc(sizeof(unsigned char)*length);
 	
 	
-	for (i = 0; i < length; ++i)
-		for (j = 0; j < high; ++j)
-			if (i == 0 || i == length-1 || j == 0 || j == high-1)
-				p[i][j] = 1,draw_elem(i, j, 2);
+	for (i = 0; i < high; ++i)
+		for (j = 0; j < length; ++j)
+			if (i == 0 || i == high-1 || j == 0 || j == length-1)
+				(*pcanvas)[i][j] = 1,draw_elem(i, j, 2);
+			else
+				(*pcanvas)[i][j] = 0,draw_elem(i, j, 0);
+}
+
+void deinit(int length, int high, unsigned char** pcanvas)
+{
+	int	i = 0;
+	int j = 0;
+	
+	close_all();
+	for (i = 0; i < high; ++i) {
+		free((unsigned char*)pcanvas[i]);
+		pcanvas[i] = NULL;
+	}
+	free(pcanvas);
 }
 
 void main(int argc, char* argv)
@@ -171,6 +181,8 @@ void main(int argc, char* argv)
 	int length = 20;
 	int high   = 40;
 	unsigned char **pcanvas = NULL;
-	pcanvas = (unsigned char **)malloc(length * high);
-	init(length, high, pcanvas);
+	init(length, high, &pcanvas);
+
+	deinit(length, high, pcanvas);
+	pcanvas = NULL;
 }
