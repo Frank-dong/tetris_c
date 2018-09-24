@@ -244,9 +244,9 @@ void play(struct canvas* pcanv)
 			revolve(&elems[index]);
 
 		x = pcanv->length/2;
-		while(1) {	//每隔1s下落一次
+		while(1) {				//每隔1s下落一次
 			draw(&elems[index], x, y, DRAW);
-			if (!ismove())	//判断当前是否可以移动
+			if (!ismove())		//判断当前是否可以移动
 				break;
 			sleep(1);
 			draw(&elems[index], x, y++, CLEAR);
