@@ -269,8 +269,58 @@ int ismove(struct canvas* pcanv, block_t* b, int x, int y)
 	return true;
 }
 
+void modify_canv(struct canvas* pcanv, block_t* b, int x, int y)
+{
+	int i = 0, j = 0;
+	int sigle_score = 1;
+	int line_num = 0;
+	int line_score = 0;
+	int flag = true;
+	int start_line = 0;
+	static int total_scole = 0;
 
+	//填充画布
+	for (i = 0; i < DIMENSION; ++i)
+		for (j = 0; j < DIMENSION; ++j)
+			if (b->block[i][j])
+				pcanv->parray[x+i][y+j] = b->block[i][j];
 
+	//计算分数
+	i = 0;
+	for (i = pcanv->high-1; i > 0; --i)
+		for (j = 0; j < pcanv->length; ++j)
+			if (pcanv->parray[i][j] == 0) 
+				break;
+			else 
+				++sigle_score;
+			
+	total_scole += sigle_score;
+	line_score = sigle_score;
+
+	//重绘
+	for (i = pcanv->high-1; i > 0, flag == true; --i) {
+		flag = false;
+		for (j = 0; j < pcanv->length; ++j) {
+			if (pcanv->parray[i][j]) {
+				flag = true;
+				draw_elem(i, j, 0);
+			}
+		}
+	}
+	line_num = pcanv->high -i - 1;
+
+	for (i = 0; i < line_num - line_score; ++i)
+		for (j = 0; j < pcanv->length; ++j)
+			if (pcanv->parray[pcanv->high-1-line_score-i][j]) {
+				pcanv->parray[pcanv->high-1-i][j] = pcanv->parray[pcanv->high-1-line_score-i][j];
+				draw_elem(pcanv->high-1-i, j, pcanv->parray[pcanv->high-1-i][j]);
+			}
+
+	start_line = pcanv->high - line_num + line_score - 1;
+	for (i = 0; i < line_score; ++i)
+		for (j = 0; j < pcanv->length; ++j)
+			pcanv->parray[start_line + i][j] = 0;
+}
 
 void play(struct canvas* pcanv)
 {
@@ -353,8 +403,17 @@ void play(struct canvas* pcanv)
 			if (msg.mtype == KEY_TYPE) {
 				switch(msg.data) {
 					case MSG_KEY_DOWN:
-						break;
+						while (ismove(pcanv, &elems[index], x, ++y)) {
+							usleep(1000);
+							draw(&elems[index], x, y-1, CLEAR);
+							draw(&elems[index], x, y, DRAW);
+						}
+						--y;
+						continue;
 					case MSG_KEY_UP:
+						draw(&elems[index], x, y, CLEAR);
+						revolve(&elems[index]);
+						draw(&elems[index], x, y, DRAW);
 						break;
 					case MSG_KEY_LEFT:
 						--cx;
@@ -372,8 +431,11 @@ void play(struct canvas* pcanv)
 			}
 			
 			if (!ismove(pcanv, &elems[index], cx, cy)) {		//判断当前是否可以移动
-				if (msg.data != MSG_KEY_LEFT || msg.data != MSG_KEY_RIGTH)
+				if (msg.data != MSG_KEY_LEFT && msg.data != MSG_KEY_RIGTH) {
+					modify_canv(pcanv, &elems[index], x, y);
 					break;
+				}
+				continue;
 			}
 			draw(&elems[index], x, y, CLEAR);
 			x = cx;
