@@ -10,7 +10,7 @@
 #include <pthread.h>
 #include <errno.h>
 
-
+#include <sys/time.h>
 
 #include "tetris_c.h"
 
@@ -51,6 +51,12 @@ enum MSG_KEY_VALUE {
 	MSG_KEY_RIGTH
 };
 
+enum BLOCK_MODE {
+	BLOCK_NORMAL,
+	BLOCK_SQUARE,
+	BLOCK_LINE
+};
+
 typedef struct{
 	unsigned char block[DIMENSION][DIMENSION];
 	int info;
@@ -88,6 +94,15 @@ void draw_elem(int x, int y, int color)
 	paint_elem(color);
 }
 
+void show_time()
+{
+	struct timeval tm;
+
+	gettimeofday(&tm, NULL);
+	printf("This time is [ %ld - %ld ]\r\n", tm.tv_sec, tm.tv_usec);
+}
+
+
 /**
  * 以{x, y}坐标为坐标原点，画出图案
  * flag:DRAW标识绘图，CLEAR标识清除
@@ -95,10 +110,6 @@ void draw_elem(int x, int y, int color)
 int draw(block_t* b, int x, int y, draw_flag flag)
 {
 	int i = 0, j = 0;
-	
-	if (!b || x < 0 || y < 0 || 
-		(flag != DRAW && flag != CLEAR))
-		return false;
 
 	if (DRAW == flag) {
 		for (i = 0; i < DIMENSION; ++i)
@@ -129,9 +140,22 @@ int revolve(block_t* b)
 
 	memcpy(&tmp, b, sizeof(block_t));
 
-	for (i = 0; i < DIMENSION; ++i)
-		for (j = 0; j < DIMENSION; ++j)
-			b->block[i][j] = tmp.block[DIMENSION-1-j][i];
+	switch (b->info) {
+	case BLOCK_NORMAL:
+		for (i = 0; i < DIMENSION-1; ++i)
+			for (j = 0; j < DIMENSION-1; ++j)
+				b->block[i][j] = tmp.block[DIMENSION-2-j][i];
+		break;
+	case BLOCK_LINE:
+		for (i = 0; i < DIMENSION; ++i)
+			for (j = 0; j < DIMENSION; ++j)
+				b->block[i][j] = tmp.block[DIMENSION-1-j][i];
+		break;	
+	case BLOCK_SQUARE:
+		break;
+	default :
+		break;
+	}
 
 	return true;
 }
@@ -198,6 +222,14 @@ void alarm_func(int data)
 	alarm(1);
 }
 
+void update_score(struct canvas* pcanv, int score)
+{
+	set_pos(pcanv->high/2, pcanv->length + 2);
+	printf("SCORE: %d", score);
+	fresh_screen();
+}
+
+
 void init(struct canvas* pcanv)
 {
 	int i = 0, j = 0;
@@ -227,6 +259,7 @@ void init(struct canvas* pcanv)
 				(pcanv->parray)[i][j] = 0,draw_elem(i, j, 0);
 			//fresh_screen();
 		}
+	update_score(pcanv, 0);
 }
 
 void deinit(struct canvas* pcanv)
@@ -269,6 +302,7 @@ int ismove(struct canvas* pcanv, block_t* b, int x, int y)
 	return true;
 }
 
+
 void modify_canv(struct canvas* pcanv, block_t* b, int x, int y)
 {
 	int i = 0, j = 0, k = 0;
@@ -292,25 +326,25 @@ void modify_canv(struct canvas* pcanv, block_t* b, int x, int y)
 				break;
 		}
 		if (j == pcanv->length-1) {
-			total_scole += k << 1;	//得分分别是1 2 4 8
+			total_scole += 1 << k;	//得分分别是1 2 4 8
 			line_score[k++] = i;
 		}
 	}
 	
-					
 	//重绘
 	if (line_score[0] != 0) {
+		update_score(pcanv, total_scole);
 		for (k = 0; line_score[k] != 0; ++k) {
 			for (i = line_score[k]+k; i >= x+k; --i)
 				memcpy(&(pcanv->parray[i][1]), &(pcanv->parray[i-1][1]), pcanv->length-2);
 		}
-		
 		for (i = pcanv->high-2; i >= y+k; --i)
-			for (j = 0; j < pcanv->length-2; ++j)
+			for (j = 1; j < pcanv->length-2; ++j)
 				if (pcanv->parray[i][j])
 					draw_elem(i, j, pcanv->parray[i][j]);
 				else 
 					draw_elem(i, j, 0);
+		fresh_screen();
 	}
 }
 
@@ -322,49 +356,49 @@ void play(struct canvas* pcanv)
 	      {1,1,1,0},
 	      {0,0,0,0},
 	      {0,0,0,0}},
-		  0
+		BLOCK_NORMAL,	
 	    },
 	    {
-		 {{0,0,0,0},
-	      {1,1,0,0},
+		 {{1,1,0,0},
 	      {0,1,1,0},
+	      {0,0,0,0},
 	      {0,0,0,0}},
-		  0
+		BLOCK_NORMAL,	
 	    },
 	    {
-		 {{0,0,0,0},
-	      {0,1,1,0},
+		 {{0,1,1,0},
 	      {1,1,0,0},
+	      {0,0,0,0},
 	      {0,0,0,0}},
-		  0
+		BLOCK_NORMAL,	
 	    },
 	    {
 		 {{0,0,0,0},
 	      {1,1,1,1},
 	      {0,0,0,0},
 	      {0,0,0,0}},
-		  0
+		BLOCK_LINE,
 	    },
 	    {
-		 {{0,0,0,0},
-	      {0,1,1,0},
-	      {0,1,1,0},
+		 {{1,1,0,0},
+	      {1,1,0,0},
+	      {0,0,0,0},
 	      {0,0,0,0}},
-		  0
+		BLOCK_SQUARE,
 	    },
 	    {
 		 {{0,1,0,0},
 	      {0,1,0,0},
 	      {0,1,1,0},
 	      {0,0,0,0}},
-		  0
+		BLOCK_NORMAL,
 	    },
 	    {
-		 {{0,0,1,0},
-	      {0,0,1,0},
-	      {0,1,1,0},
+		 {{0,1,0,0},
+	      {0,1,0,0},
+	      {1,1,0,0},
 	      {0,0,0,0}},
-		  0
+		BLOCK_NORMAL,
 	    },  
 	};
 	int index = 0;
@@ -381,6 +415,8 @@ void play(struct canvas* pcanv)
 		for (i = 0; i < times; ++i)	//随机出现一个随机变换后的图案
 			revolve(&elems[index]);
 
+		//对出现的图案重新随机填色
+	
 		y = pcanv->length/2;
 		x = 1;
 		while(1) {
@@ -426,7 +462,9 @@ void play(struct canvas* pcanv)
 			
 			if (!ismove(pcanv, &elems[index], cx, cy)) {		//判断当前是否可以移动
 				if (msg.data != MSG_KEY_LEFT && msg.data != MSG_KEY_RIGTH) {
+					alarm(0);
 					modify_canv(pcanv, &elems[index], x, y);
+					alarm(1);
 					break;
 				}
 				continue;
@@ -443,8 +481,8 @@ void play(struct canvas* pcanv)
 
 void main(int argc, char* argv)
 {
-	int length = 20;
-	int high   = 30;
+	int length = 15;
+	int high   = 20;
 	struct canvas canv;
 
 	canv.high = high;
@@ -465,4 +503,8 @@ void main(int argc, char* argv)
    https://blog.csdn.net/haidonglin/article/details/53672208
 
    在判断是否可以移动、填充值等过程中，对画布的数组访问，不能越界，否则就会报错。
+3. 方块旋转的矫正问题
+   方块采用4x4的矩阵，在移动时，方块边界为空，肯能会移出画布。
+   去掉draw接口中的参数判断，因为在判断移动等操作中，都会判断图案的每个像素点上是否有值，所以投射到画布上，是不会超出画布边界，也不会出现下标为-1的情况
+4. 档图案贴在画布边上的时候，旋转后的图案可能会超出画布边界，此事要做判断，重新矫正图案的位置。
 */
