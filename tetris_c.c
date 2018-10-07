@@ -23,11 +23,13 @@
 #define KEY_DOWN	0x42
 #define KEY_LEFT	0x44
 #define KEY_RIGHT	0x43
+#define KEY_PAUSE	0x20
 
 
 #define set_pos(x, y)	printf("\033[%d;%dH", x + 1, 2*y+1)
 #define clear_screen() 	printf("\033[2J")
 #define hide_cursor()	printf("\033[?25l")
+#define show_cursor()	printf("\033[?25h")
 #define show_cursor()	printf("\033[?25h")
 #define paint_elem(c)	printf("\033[%dm%d ", 40 + c, c)
 #define close_all()		printf("\033[0m");
@@ -40,7 +42,8 @@ typedef enum {
 
 enum MSG_TYPE{
 	KEY_TYPE = 1,
-	SIG_TYPE
+	SIG_TYPE,
+	CTR_TYPE
 };
 
 enum MSG_KEY_VALUE {
@@ -48,7 +51,12 @@ enum MSG_KEY_VALUE {
 	MSG_KEY_UP,
 	MSG_KEY_DOWN,
 	MSG_KEY_LEFT,
-	MSG_KEY_RIGTH
+	MSG_KEY_RIGTH,
+	MSG_KEY_PAUSE
+};
+
+enum MSG_CTR_VALUE {
+	MSG_CTR_GAMEOVER
 };
 
 enum BLOCK_MODE {
@@ -167,12 +175,11 @@ void key_init()
 	struct termios new_settings;
 	tcgetattr(0, &stored_settings);
 	new_settings = stored_settings;
-	//new_settings.c_oflag &= ~(OPOST);
 	new_settings.c_lflag &= ~(ICANON | ECHO);
 	new_settings.c_cc[VTIME] = 0;
-	tcgetattr(0,&stored_settings);
+	tcgetattr(0, &stored_settings);
 	new_settings.c_cc[VMIN] = 1;
-	tcsetattr(0,TCSANOW, &new_settings);
+	tcsetattr(0, TCSANOW, &new_settings);
 }
 void key_deinit()
 {
@@ -203,6 +210,9 @@ void* key_run(void* data)
 				break;
 			case KEY_RIGHT:
 				msg.data = MSG_KEY_RIGTH;
+				break;
+			case KEY_PAUSE:
+				msg.data = MSG_KEY_PAUSE;
 				break;
 			default:
 				continue;
@@ -268,6 +278,7 @@ void deinit(struct canvas* pcanv)
 	int j = 0;
 	
 	close_all();
+	show_cursor();
 	key_deinit();
 	
 	for (i = 0; i < pcanv->high; ++i) {
@@ -308,11 +319,24 @@ void modify_canv(struct canvas* pcanv, block_t* b, int x, int y)
 	int i = 0, j = 0, k = 0;
 	int sigle_score = 1;
 	int line_num = 0;
-	int line_score[DIMENSION] = {0};
+	int line_score[DIMENSION+1] = {0};
 	int flag = true;
 	int start_line = 0;
 	static int total_scole = 0;
+	static int most_high_line = 1000;
+	msg_t	msg;
 
+	most_high_line = most_high_line > x ? x : most_high_line;
+	printf("\033[30;30H %d", most_high_line);
+
+	if (most_high_line <= 1) {
+		msg.mtype = CTR_TYPE;
+		msg.data = MSG_CTR_GAMEOVER;
+		msgsnd(msgqueue_id, (void*)&msg, sizeof(msg_t) - sizeof(long int), 0);
+		return;
+	}
+		
+	
 	//填充画布
 	for (i = 0; i < DIMENSION; ++i)
 		for (j = 0; j < DIMENSION; ++j)
@@ -325,27 +349,47 @@ void modify_canv(struct canvas* pcanv, block_t* b, int x, int y)
 			if (pcanv->parray[i][j] == 0)
 				break;
 		}
-		if (j == pcanv->length-1) {
-			total_scole += 1 << k;	//得分分别是1 2 4 8
+		if (j >= pcanv->length-1) 
 			line_score[k++] = i;
-		}
 	}
 	
 	//重绘
 	if (line_score[0] != 0) {
+		total_scole += (1 << (k-1)); //得分分别是1 2 4 8
 		update_score(pcanv, total_scole);
 		for (k = 0; line_score[k] != 0; ++k) {
-			for (i = line_score[k]+k; i >= x+k; --i)
+			for (i = line_score[k]+k; i >= most_high_line+k; --i)
 				memcpy(&(pcanv->parray[i][1]), &(pcanv->parray[i-1][1]), pcanv->length-2);
+			memset(&(pcanv->parray[i][1]), 0, pcanv->length-2);
 		}
-		for (i = pcanv->high-2; i >= y+k; --i)
-			for (j = 1; j < pcanv->length-2; ++j)
+		for (i = pcanv->high-2; i >= most_high_line; --i)
+			for (j = 1; j <= pcanv->length-2; ++j)
 				if (pcanv->parray[i][j])
 					draw_elem(i, j, pcanv->parray[i][j]);
 				else 
 					draw_elem(i, j, 0);
 		fresh_screen();
 	}
+}
+
+
+void show_over(struct canvas* pcanv)
+{
+	int x, y;
+
+	x = pcanv->high/2-1;
+	y = pcanv->length/2-3;
+
+	set_pos(x++, y);
+	printf("\033[43m\033[32m");
+	printf("             ");
+	set_pos(x++, y);
+	printf("  GAME OVER  ");
+	set_pos(x++, y);
+	printf("             ");
+	fresh_screen();
+
+	set_pos(pcanv->high+1, 0);
 }
 
 void play(struct canvas* pcanv)
@@ -407,6 +451,8 @@ void play(struct canvas* pcanv)
 	int x = 0, y = 0;
 	int cx = 0, cy = 0;
 	msg_t	msg;
+	static char pause_flag = 0;
+	block_t  tmp_block;
 	
 	srand(getpid());
 	while (1) {
@@ -431,18 +477,21 @@ void play(struct canvas* pcanv)
 			if (msg.mtype == KEY_TYPE) {
 				switch(msg.data) {
 					case MSG_KEY_DOWN:
-						alarm(0);
+						//alarm(0);
 						while (ismove(pcanv, &elems[index], ++x, y)) {
 							usleep(1000);
 							draw(&elems[index], x-1, y, CLEAR);
 							draw(&elems[index], x, y, DRAW);
 						}
 						--x;
-						alarm(1);
+						//alarm(1);
 						continue;
 					case MSG_KEY_UP:
 						draw(&elems[index], x, y, CLEAR);
-						revolve(&elems[index]);
+						memcpy(&tmp_block, &elems[index], sizeof(block_t));
+						revolve(&tmp_block);
+						if (ismove(pcanv, &tmp_block, x, y))
+							memcpy(&elems[index], &tmp_block, sizeof(block_t));
 						draw(&elems[index], x, y, DRAW);
 						break;
 					case MSG_KEY_LEFT:
@@ -453,11 +502,20 @@ void play(struct canvas* pcanv)
 						break;
 					case MSG_KEY_QUIT:
 						break;
+					case MSG_KEY_PAUSE:
+						if (pause_flag)
+							alarm(1),pause_flag = 0;
+						else 
+							alarm(0),pause_flag = 1;
+						break;
 					default:
 						continue;
 				}
 			} else if (msg.mtype == SIG_TYPE) {
 				++cx;
+			} else if (msg.mtype == CTR_TYPE) {
+				show_over(pcanv);
+				return;
 			}
 			
 			if (!ismove(pcanv, &elems[index], cx, cy)) {		//判断当前是否可以移动
